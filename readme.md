@@ -33,21 +33,7 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 | ------ | --- | --- | --- | --- | --- |
 | Count  | 226 | 196 | 203 | 179 | 196 |
 
-**Price by band (£):**
 
-| 10–20 | 20–30 | 30–40 | 40–50 | 50–60 |
-| ----- | ----- | ----- | ----- | ----- |
-| 196   | 206   | 195   | 205   | 198   |
-
-Prices are spread almost evenly across all bands, the catalogue has no budget or premium skew.
-
-**Average price by rating:**
-
-| Rating    | 1      | 2      | 3      | 4      | 5      |
-| --------- | ------ | ------ | ------ | ------ | ------ |
-| Avg price | £34.56 | £34.81 | £34.69 | £36.09 | £35.37 |
-
-Rating has no relationship to price  a 1-star book costs roughly the same as a 5-star book.
 
 ---
 
