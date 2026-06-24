@@ -8,12 +8,12 @@ This document walks through the HTML structure I observed, the field-level findi
 
 ## What Gets Scraped
 
-| Field | Source |
-|---|---|
-| Title | `title` attribute on the `<a>` tag inside each book card |
-| URL | `href` attribute on the same `<a>` tag |
-| Price | `.price_color` class inside `.product_price` |
-| Rating | CSS class word on the `<p class="star-rating">` element |
+| Field  | Source                                                   |
+| ------ | -------------------------------------------------------- |
+| Title  | `title` attribute on the `<a>` tag inside each book card |
+| URL    | `href` attribute on the same `<a>` tag                   |
+| Price  | `.price_color` class inside `.product_price`             |
+| Rating | CSS class word on the `<p class="star-rating">` element  |
 
 ---
 
@@ -45,7 +45,18 @@ These are the non-obvious things I found while building the scraper. Most of the
 
 ### 1. The price field has an encoding artifact, not just a currency symbol
 
-The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded. The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through.
+The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded.
+
+<img src="images/browser_encoding.png" alt="Browser encoding for this case" />
+
+```python
+response.encoding = 'utf-8'   # gives '£'   (correct)
+response.encoding = 'latin-1'  # gives 'Â£'  (the artifact)
+```
+
+The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through.
+
+The site correctly declares `Content-Type: text/html; charset=utf-8` in its response headers, so the artifact only surfaces when something in the pipeline ignores that declaration. We are safe here.
 
 ### 2. Book titles are truncated in the `<a>` tag text but the full title is in the `title` attribute
 
@@ -55,7 +66,7 @@ The visible link text for long titles gets cut off with `...` like `"A Light in 
 
 ### 3. Rating is encoded as a CSS class word, not a number
 
-Star rating is stored as a class on the `<p>` element like `<p class="star-rating Three">`. There is no `data-rating` attribute or numeric value anywhere in the HTML. 
+Star rating is stored as a class on the `<p>` element like `<p class="star-rating Three">`. There is no `data-rating` attribute or numeric value anywhere in the HTML.
 <img src="images/rating.png" alt="Rating structure showing the static nature" />
 
 I mapped the word to an integer using a static dictionary called `RATING_MAP`. Books with missing or unrecognised ratings default to `0`. This would break silently if the site ever added a `"Six"` or `"Seven"` class since a value of `0` would appear in the output without raising an error. An alternative would be to raise an exception on unknown class values, but that would halt the entire scrape for one bad record. I chose the silent default with the expectation that a downstream schema constraint would catch it.
@@ -117,15 +128,15 @@ erDiagram
 
 ### Key Design Decisions
 
-| Decision | Reasoning |
-|---|---|
-| `books` is the core entity | Each row is one catalogue entry identified by a stable `url`, which the site uses as the canonical ID per book. All other tables reference it. |
-| `url` as natural unique key on `books` | The URL encodes a slug that never changes for a given book on this site. More readable than a surrogate key when debugging. Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987` |
-| Price lives in `price_history`, not `books` | Keeps the full historical record intact. Current price is just the latest row for that `book_id`. No data is lost when a price changes. This is the mechanism for change detection shown in Diagram 2. |
-| `rating` on `books`, not in history | Rating on this site appears editorial and static. If it ever changed, the change detection flow in Diagram 2 would catch it and we could promote rating to a history table at that point. |
-| `is_active` flag on `books` | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `last_seen`. Hard deletes would break the price history foreign key chain. |
-| `categories` normalised out | Storing category as a raw string on `books` would repeat `"Mystery"` hundreds of times across rows. Instead, `categories` holds each name exactly once and `books` references it via `category_id`. Two concrete benefits: a typo like `"Mysetery"` cannot silently create a phantom category since the FK constraint rejects unknown values, and aggregations like counting books per category work correctly because every book in a category points to the same row, not a loose string. The trade-off is one extra JOIN, which is negligible at this scale. Note: the current scraper does not collect category data, but the product page exposes it and the schema is ready for it. |
-| `scrape_runs` as audit log | Every run records timestamp, count, and status. This makes diffs possible since change detection compares run N against run N-1. If a run fails mid-way, `status` reflects it and downstream consumers can skip that run's data entirely. |
+| Decision                                    | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `books` is the core entity                  | Each row is one catalogue entry identified by a stable `url`, which the site uses as the canonical ID per book. All other tables reference it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `url` as natural unique key on `books`      | The URL encodes a slug that never changes for a given book on this site. More readable than a surrogate key when debugging. Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Price lives in `price_history`, not `books` | Keeps the full historical record intact. Current price is just the latest row for that `book_id`. No data is lost when a price changes. This is the mechanism for change detection shown in Diagram 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `rating` on `books`, not in history         | Rating on this site appears editorial and static. If it ever changed, the change detection flow in Diagram 2 would catch it and we could promote rating to a history table at that point.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `is_active` flag on `books`                 | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `last_seen`. Hard deletes would break the price history foreign key chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `categories` normalised out                 | Storing category as a raw string on `books` would repeat `"Mystery"` hundreds of times across rows. Instead, `categories` holds each name exactly once and `books` references it via `category_id`. Two concrete benefits: a typo like `"Mysetery"` cannot silently create a phantom category since the FK constraint rejects unknown values, and aggregations like counting books per category work correctly because every book in a category points to the same row, not a loose string. The trade-off is one extra JOIN, which is negligible at this scale. Note: the current scraper does not collect category data, but the product page exposes it and the schema is ready for it. |
+| `scrape_runs` as audit log                  | Every run records timestamp, count, and status. This makes diffs possible since change detection compares run N against run N-1. If a run fails mid-way, `status` reflects it and downstream consumers can skip that run's data entirely.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### Diagram 2: Data Change Detection
 
@@ -160,13 +171,13 @@ flowchart TD
 
 ### Component Notes
 
-| Component | Purpose |
-|---|---|
-| `scrape_staging` | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table. |
-| Diff logic (D to E/F/G) | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
-| `scrape_runs` log | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data. |
-| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you exactly when they disappeared. Price history is fully preserved for trend analysis. |
-| Scheduler | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema. |
+| Component                 | Purpose                                                                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scrape_staging`          | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table.                                                |
+| Diff logic (D to E/F/G)   | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
+| `scrape_runs` log         | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data.        |
+| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you exactly when they disappeared. Price history is fully preserved for trend analysis.           |
+| Scheduler                 | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema.             |
 
 ---
 
@@ -192,3 +203,5 @@ Each run writes to a `scrape_staging` table first. A diff then classifies every 
 - **Existing URL, gone from site** -- set `is_active = false`, record `last_seen`
 
 The `scrape_runs` table ties every price snapshot to the exact run that captured it, making the full history traceable and auditable.
+
+### Thank You!
