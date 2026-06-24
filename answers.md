@@ -11,7 +11,7 @@ This document walks through the HTML structure I observed, the field-level findi
 | Field  | Description |
 | ------ | ----------- |
 | Title  | The full name of the book, e.g. `A Light in the Attic` |
-| URL    | The link to the book's individual page on the site |
+| URL    | The link to the book's individual page on the site eg `https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html` |
 | Price  | The listed price in GBP, e.g. `51.77` |
 | Rating | The star rating on a scale of 1 to 5, e.g. `3` |
 
@@ -29,14 +29,25 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 
 **Rating distribution:**
 
-| Stars | Count |
-| ----- | ----- |
-| 1★ | 226 |
-| 2★ | 196 |
-| 3★ | 203 |
-| 4★ | 179 |
-| 5★ | 196 |
+| Rating | 1 | 2 | 3 | 4 | 5 |
+| ------ | --- | --- | --- | --- | --- |
+| Count  | 226 | 196 | 203 | 179 | 196 |
 
+**Price by band (£):**
+
+| 10–20 | 20–30 | 30–40 | 40–50 | 50–60 |
+| ----- | ----- | ----- | ----- | ----- |
+| 196   | 206   | 195   | 205   | 198   |
+
+Prices are spread almost evenly across all bands, the catalogue has no budget or premium skew.
+
+**Average price by rating:**
+
+| Rating    | 1      | 2      | 3      | 4      | 5      |
+| --------- | ------ | ------ | ------ | ------ | ------ |
+| Avg price | £34.56 | £34.81 | £34.69 | £36.09 | £35.37 |
+
+Rating has no relationship to price  a 1-star book costs roughly the same as a 5-star book.
 
 ---
 

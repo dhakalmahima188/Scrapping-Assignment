@@ -11,7 +11,7 @@ This document walks through the HTML structure I observed, the field-level findi
 | Field  | Description |
 | ------ | ----------- |
 | Title  | The full name of the book, e.g. `A Light in the Attic` |
-| URL    | The link to the book's individual page on the site |
+| URL    | The link to the book's individual page on the site e.g. `https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html` |
 | Price  | The listed price in GBP, e.g. `51.77` |
 | Rating | The star rating on a scale of 1 to 5, e.g. `3` |
 
@@ -29,15 +29,25 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 
 **Rating distribution:**
 
-| Stars | Count |
-| ----- | ----- |
-| 1★ | 226 |
-| 2★ | 196 |
-| 3★ | 203 |
-| 4★ | 179 |
-| 5★ | 196 |
+| Rating | 1 | 2 | 3 | 4 | 5 |
+| ------ | --- | --- | --- | --- | --- |
+| Count  | 226 | 196 | 203 | 179 | 196 |
 
+**Price by band (£):**
 
+| 10–20 | 20–30 | 30–40 | 40–50 | 50–60 |
+| ----- | ----- | ----- | ----- | ----- |
+| 196   | 206   | 195   | 205   | 198   |
+
+Prices are spread almost evenly across all bands, the catalogue has no budget or premium skew.
+
+**Average price by rating:**
+
+| Rating    | 1      | 2      | 3      | 4      | 5      |
+| --------- | ------ | ------ | ------ | ------ | ------ |
+| Avg price | £34.56 | £34.81 | £34.69 | £36.09 | £35.37 |
+
+Rating has no relationship to price  a 1-star book costs roughly the same as a 5-star book.
 
 ---
 
@@ -78,9 +88,7 @@ response.encoding = 'utf-8'   # gives '£'   (correct)
 response.encoding = 'latin-1'  # gives 'Â£'  (the artifact)
 ```
 
-The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through.
-
-The site correctly declares `Content-Type: text/html; charset=utf-8` in its response headers, so the artifact only surfaces when something in the pipeline ignores that declaration. We are safe here.
+The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
 
 ### 2. Book titles are truncated in the `<a>` tag text but the full title is in the `title` attribute
 
@@ -287,3 +295,4 @@ Each run writes to a `scrape_staging` table first. A diff then classifies every 
 The `scrape_runs` table ties every price snapshot to the exact run that captured it, making the full history traceable and auditable.
 
 ### Thank You!
+@Mahima Dhakal
