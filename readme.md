@@ -5,10 +5,9 @@ I have created a Python web scraper built to extract book data from [books.toscr
 
 ---
 
-## Observations
 
 
-### HTML Structure
+### HTML Structure Observations
 
 #### Title, Price, and URL
 
@@ -30,7 +29,7 @@ The pagination "next" button lives inside a `<li class="next">` element. The hre
 
 ---
 
-## Fields
+## Fields Observations and Reasoning
 
 These are the non-obvious things I found while building the scraper. Most of them would have caused silent data corruption if I had not caught them.
 
