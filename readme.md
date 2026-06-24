@@ -1,3 +1,8 @@
+---
+layout: default
+title: NexMart Book Scraper
+---
+
 # My Book Scraper for NexMart
 
 I created a Python web scraper built to extract book data from [books.toscrape.com](http://books.toscrape.com). It collects titles, prices, ratings, and URLs across all 50 pages of the catalogue and exports them to a CSV file.
@@ -89,7 +94,7 @@ Books on the site are divided into categories, with multiple books falling under
 
 ### Diagram 1: Normalized Relational Schema (ERD)
 
-```mermaid
+<pre class="mermaid">
 erDiagram
     SCRAPE_RUNS {
         int     id          PK
@@ -124,7 +129,7 @@ erDiagram
     BOOKS }o--|| CATEGORIES : "belongs to"
     BOOKS ||--o{ PRICE_HISTORY : "has"
     PRICE_HISTORY }o--|| SCRAPE_RUNS : "captured in"
-```
+</pre>
 
 ### Key Design Decisions
 
@@ -140,7 +145,7 @@ erDiagram
 
 ### Diagram 2: Data Change Detection
 
-```mermaid
+<pre class="mermaid">
 flowchart TD
     A([Scheduler\nCron / Airflow / Prefect]) --> B[Run scraper.py\nFetch all 1000 records]
     B --> C[Write to staging table\nscrape_staging]
@@ -167,7 +172,7 @@ flowchart TD
     E2 & F2 & F3 & F5 & F6 & G1 --> H[Update scrape_runs\nstatus = complete\nbooks_found = N]
 
     H --> I([Done])
-```
+</pre>
 
 ### Component Notes
 
