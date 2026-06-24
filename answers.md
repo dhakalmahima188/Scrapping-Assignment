@@ -11,7 +11,7 @@ This document walks through the HTML structure I observed, the field-level findi
 | Field  | Description |
 | ------ | ----------- |
 | Title  | The full name of the book, e.g. `A Light in the Attic` |
-| URL    | The link to the book's individual page on the site eg `https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html` |
+| URL    | The link to the book's individual page on the site e.g. `https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html` |
 | Price  | The listed price in GBP, e.g. `51.77` |
 | Rating | The star rating on a scale of 1 to 5, e.g. `3` |
 
@@ -33,21 +33,7 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 | ------ | --- | --- | --- | --- | --- |
 | Count  | 226 | 196 | 203 | 179 | 196 |
 
-**Price by band (£):**
 
-| 10–20 | 20–30 | 30–40 | 40–50 | 50–60 |
-| ----- | ----- | ----- | ----- | ----- |
-| 196   | 206   | 195   | 205   | 198   |
-
-Prices are spread almost evenly across all bands, the catalogue has no budget or premium skew.
-
-**Average price by rating:**
-
-| Rating    | 1      | 2      | 3      | 4      | 5      |
-| --------- | ------ | ------ | ------ | ------ | ------ |
-| Avg price | £34.56 | £34.81 | £34.69 | £36.09 | £35.37 |
-
-Rating has no relationship to price  a 1-star book costs roughly the same as a 5-star book.
 
 ---
 
@@ -88,9 +74,7 @@ response.encoding = 'utf-8'   # gives '£'   (correct)
 response.encoding = 'latin-1'  # gives 'Â£'  (the artifact)
 ```
 
-The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through.
-
-The site correctly declares `Content-Type: text/html; charset=utf-8` in its response headers, so the artifact only surfaces when something in the pipeline ignores that declaration. We are safe here.
+The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
 
 ### 2. Book titles are truncated in the `<a>` tag text but the full title is in the `title` attribute
 
@@ -113,13 +97,21 @@ On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On s
 
 Scrapy adds a full framework: spiders, pipelines, settings, and middlewares. For a 50-page linear crawl with no JavaScript rendering, that would be roughly four times more code for the same output. I added a `0.5s` delay between requests manually to be polite to the server. The trade-offs are no built-in rate limiting, no distributed crawl support, and no automatic retry queue. For this scope, those are acceptable gaps.
 
+
+### 6. Categories introduced in the system
+
+The site organises every book under a named category.
+<img src="images/categories.png" alt="Book categories shown on the site" />
+
+The current scraper does not capture category data. It walks the full catalogue (`/catalogue/page-N.html`) rather than per-category pages, so no category signal is present in the raw HTML at scrape time. 
+
+I have modified the database design calls for a `CATEGORIES` table with a foreign key on `BOOKS.category_id`, this is a planned gap rather than an oversight. Just wanted to acknowledge it.
+
+
 ---
 
 ## Database Design
 
-Books on the site are divided into categories, with multiple books falling under each one.
-
-<img src="images/categories.png" alt="Book categories shown on the site" />
 
 ### Diagram 1: Normalized Relational Schema (ERD)
 
@@ -212,7 +204,7 @@ flowchart TD
 | `scrape_staging`          | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table.                                                |
 | Diff logic (D to E/F/G)   | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
 | `scrape_runs` log         | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data.        |
-| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you exactly when they disappeared. Price history is fully preserved for trend analysis.           |
+| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells us exactly when they disappeared. Price history is fully preserved for trend analysis.           |
 | Scheduler                 | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema.             |
 
 ### Example Queries
@@ -297,3 +289,4 @@ Each run writes to a `scrape_staging` table first. A diff then classifies every 
 The `scrape_runs` table ties every price snapshot to the exact run that captured it, making the full history traceable and auditable.
 
 ### Thank You!
+@Mahima Dhakal

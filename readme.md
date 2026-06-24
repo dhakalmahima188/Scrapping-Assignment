@@ -97,13 +97,21 @@ On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On s
 
 Scrapy adds a full framework: spiders, pipelines, settings, and middlewares. For a 50-page linear crawl with no JavaScript rendering, that would be roughly four times more code for the same output. I added a `0.5s` delay between requests manually to be polite to the server. The trade-offs are no built-in rate limiting, no distributed crawl support, and no automatic retry queue. For this scope, those are acceptable gaps.
 
+
+### 6. Categories introduced in the system
+
+The site organises every book under a named category.
+<img src="images/categories.png" alt="Book categories shown on the site" />
+
+The current scraper does not capture category data. It walks the full catalogue (`/catalogue/page-N.html`) rather than per-category pages, so no category signal is present in the raw HTML at scrape time. 
+
+I have modified the database design calls for a `CATEGORIES` table with a foreign key on `BOOKS.category_id`, this is a planned gap rather than an oversight. Just wanted to acknowledge it.
+
+
 ---
 
 ## Database Design
 
-Books on the site are divided into categories, with multiple books falling under each one.
-
-<img src="images/categories.png" alt="Book categories shown on the site" />
 
 ### Diagram 1: Normalized Relational Schema (ERD)
 
@@ -196,7 +204,7 @@ flowchart TD
 | `scrape_staging`          | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table.                                                |
 | Diff logic (D to E/F/G)   | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
 | `scrape_runs` log         | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data.        |
-| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you exactly when they disappeared. Price history is fully preserved for trend analysis.           |
+| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells us exactly when they disappeared. Price history is fully preserved for trend analysis.           |
 | Scheduler                 | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema.             |
 
 ### Example Queries

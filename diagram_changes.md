@@ -1,8 +1,7 @@
-# Diagram 2 — Data Change Detection System
 
 ```mermaid
 flowchart TD
-    A([Scheduler\nCron / Airflow/ Prefect]) --> B[Run scraper.py\nFetch all 1000 records]
+    A([Scheduler\nCron / Airflow / Prefect]) --> B[Run scraper.py\nFetch all 1000 records]
     B --> C[Write to staging table\nscrape_staging]
 
     C --> D{Compare staging\nvs books table}
@@ -28,14 +27,3 @@ flowchart TD
 
     H --> I([Done])
 ```
-
-## Design Notes
-
-| Component | Purpose |
-|---|---|
-| `scrape_staging` | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table. |
-| Diff logic (D → E/F/G) | Three-way comparison: new arrivals, existing books to check for mutations, and disappearances. Each branch is independent and a price change does not affect removal detection. |
-| `scrape_runs` log | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data. |
-| Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you when they disappeared. Price history is preserved for trend analysis. |
-| Scheduler | Any cron-compatible tool works. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without changes. |
-
