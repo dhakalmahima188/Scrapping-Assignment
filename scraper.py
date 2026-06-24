@@ -2,116 +2,115 @@
 
 import csv
 import time
-from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-BASE_URL = "https://books.toscrape.com/catalogue/"
-START_URL = "https://books.toscrape.com/catalogue/page-1.html"
+class BookScraper:
+    BASE_URL = "https://books.toscrape.com/catalogue/"
+    START_URL = "https://books.toscrape.com/catalogue/page-1.html"
+    RATING_MAP = {
+        "Zero": 0,
+        "One": 1,
+        "Two": 2,
+        "Three": 3,
+        "Four": 4,
+        "Five": 5,
+    }
+    DEFAULT_RETRIES = 3
+    DEFAULT_DELAY = 1
 
-RATING_MAP = {
-    "Zero": 0,
-    "One": 1,
-    "Two": 2,
-    "Three": 3,
-    "Four": 4,
-    "Five": 5,
-}
+    def __init__(self, output_file: str = "output.csv"):
+        self.output_file = output_file
+        self.session = requests.Session()
 
-OUTPUT_FILE = "output.csv"
-SESSION = requests.Session()
-
-
-def get_page(url: str, retries: int = 3, delay: float = 1.0) -> Optional[BeautifulSoup]:
-    for attempt in range(1, retries + 1):
-        try:
-            response = SESSION.get(url, timeout=10)
-            response.raise_for_status()
-            response.encoding = 'utf-8'
-            return BeautifulSoup(response.text, "html.parser")
-        except requests.RequestException as e:
-            print(f"  [warn] Attempt {attempt}/{retries} failed for {url}: {e}")
-            if attempt < retries:
-                time.sleep(delay * attempt)
-    return None
-
-
-def parse_books(soup: BeautifulSoup) -> list[dict]:
-    books = []
-    articles = soup.select("article.product_pod")
-
-    for article in articles:
-        title_tag = article.select_one("h3 > a")
-        title = title_tag["title"] if title_tag else ""
-
-        price_tag = article.select_one("p.price_color")
-        price_text = price_tag.text.strip() if price_tag else "0"
-        price = float("".join(c for c in price_text if c.isdigit() or c == "."))
-
-        rating_tag = article.select_one("p.star-rating")
-        rating_word = rating_tag["class"][1] if rating_tag else "Zero"
-        rating = RATING_MAP.get(rating_word, 0)
-
-
-        relative_href = title_tag["href"] if title_tag else ""
-        clean_href = relative_href.replace("../", "")
-        url = BASE_URL + clean_href
-
-        books.append({
-            "title": title,
-            "price": price,
-            "rating": rating,
-            "url": url,
-        })
-
-    return books
-
-
-def get_next_page_url(soup: BeautifulSoup) -> Optional[str]:
-    next_btn = soup.select_one("li.next > a")
-    if not next_btn:
+    def get_page(self, url: str):
+        for attempt in range(1, self.DEFAULT_RETRIES + 1):
+            try:
+                response = self.session.get(url, timeout=10)
+                response.raise_for_status()
+                response.encoding = 'utf-8'
+                return BeautifulSoup(response.text, "html.parser")
+            except requests.RequestException as e:
+                print(f"Attempt {attempt}/{self.DEFAULT_RETRIES} failed for {url}: {e}")
+                if attempt < self.DEFAULT_RETRIES:
+                    time.sleep(self.DEFAULT_DELAY * attempt)
         return None
-    return BASE_URL + next_btn["href"]
 
+    def parse_books(self, soup: BeautifulSoup):
+        books = []
+        articles = soup.select("article.product_pod")
 
-def scrape_all() -> list[dict]:
-    all_books = []
-    current_url = START_URL
-    page_num = 1
-    start_time = time.time()
+        for article in articles:
+            title_tag = article.select_one("h3 > a")
+            title = title_tag["title"] if title_tag else ""
 
-    while current_url:
-        print(f"Scraping page {page_num}: {current_url}")
-        soup = get_page(current_url)
+            price_tag = article.select_one("p.price_color")
+            price_text = price_tag.text.strip() if price_tag else "0"
+            price = float("".join(c for c in price_text if c.isdigit() or c == "."))
 
-        if soup is None:
-            print(f"  [error] Could not fetch page {page_num}. Stopping.")
-            break
+            rating_tag = article.select_one("p.star-rating")
+            rating_word = rating_tag["class"][1] if rating_tag else "Zero"
+            rating = self.RATING_MAP.get(rating_word, 0)
 
-        books = parse_books(soup)
-        all_books.extend(books)
-        print(f"  -> {len(books)} books collected (total: {len(all_books)})")
+            relative_href = title_tag["href"] if title_tag else ""
+            clean_href = relative_href.replace("../", "")
+            url = self.BASE_URL + clean_href
 
-        current_url = get_next_page_url(soup)
-        page_num += 1
-        time.sleep(0.5)
+            books.append({
+                "title": title,
+                "price": price,
+                "rating": rating,
+                "url": url,
+            })
 
-    elapsed = time.time() - start_time
-    print(f"\nFinished: {len(all_books)} books scraped in {elapsed:.1f}s")
-    return all_books
+        return books
 
+    def get_next_page_url(self, soup: BeautifulSoup):
+        next_btn = soup.select_one("li.next > a")
+        if not next_btn:
+            return None
+        return self.BASE_URL + next_btn["href"]
 
-def write_csv(books: list[dict], filepath: str) -> None:
-    fieldnames = ["title", "price", "rating", "url"]
-    with open(filepath, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(books)
-    print(f"\nWrote {len(books)} records to {filepath}")
+    def scrape_all(self) -> list[dict]:
+        all_books = []
+        current_url = self.START_URL
+        page_num = 1
+        start_time = time.time()
+
+        while current_url:
+            print(f"Scraping page {page_num}: {current_url}")
+            soup = self.get_page(current_url)
+
+            if soup is None:
+                print(f"Could not fetch page {page_num}. Stopping.")
+                break
+
+            books = self.parse_books(soup)
+            all_books.extend(books)
+            print(f"{len(books)} books collected  in the loop. (total: {len(all_books)})")
+
+            current_url = self.get_next_page_url(soup)
+            page_num += 1
+            time.sleep(0.5)
+
+        elapsed = time.time() - start_time
+        print(f"\nTask completed: {len(all_books)} books scraped in {elapsed:.1f}s")
+        return all_books
+
+    def write_csv(self, books: list[dict]) :
+        fieldnames = ["title", "price", "rating", "url"]
+        with open(self.output_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(books)
+        print(f"\nExtracted {len(books)} records to {self.output_file}")
+
+    def run(self) -> None:
+        books = self.scrape_all()
+        print(f"Fetched {len(books)} records. Writing to {self.output_file}...")
+        self.write_csv(books)
+        print("Done!")
 
 
 if __name__ == "__main__":
-    books = scrape_all()
-    print(f"Fetched  {len(books)} records. Writing to {OUTPUT_FILE}...")
-    write_csv(books, OUTPUT_FILE)
-    print("Done!")
+    BookScraper().run()
