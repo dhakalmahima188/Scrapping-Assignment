@@ -8,12 +8,12 @@ This document walks through the HTML structure I observed, the field-level findi
 
 ## What Gets Scraped
 
-| Field  | Source                                                   |
-| ------ | -------------------------------------------------------- |
-| Title  | `title` attribute on the `<a>` tag inside each book card |
-| URL    | `href` attribute on the same `<a>` tag                   |
-| Price  | `.price_color` class inside `.product_price`             |
-| Rating | CSS class word on the `<p class="star-rating">` element  |
+| Field  | Description |
+| ------ | ----------- |
+| Title  | The full name of the book, e.g. `A Light in the Attic` |
+| URL    | The link to the book's individual page on the site |
+| Price  | The listed price in GBP, e.g. `51.77` |
+| Rating | The star rating on a scale of 1 to 5, e.g. `3` |
 
 ---
 
