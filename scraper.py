@@ -19,13 +19,15 @@ RATING_MAP = {
 }
 
 OUTPUT_FILE = "output.csv"
+SESSION = requests.Session()
 
 
 def get_page(url: str, retries: int = 3, delay: float = 1.0) -> Optional[BeautifulSoup]:
     for attempt in range(1, retries + 1):
         try:
-            response = requests.get(url, timeout=10)
+            response = SESSION.get(url, timeout=10)
             response.raise_for_status()
+            response.encoding = 'utf-8'
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as e:
             print(f"  [warn] Attempt {attempt}/{retries} failed for {url}: {e}")
@@ -76,6 +78,7 @@ def scrape_all() -> list[dict]:
     all_books = []
     current_url = START_URL
     page_num = 1
+    start_time = time.time()
 
     while current_url:
         print(f"Scraping page {page_num}: {current_url}")
@@ -91,8 +94,10 @@ def scrape_all() -> list[dict]:
 
         current_url = get_next_page_url(soup)
         page_num += 1
-        time.sleep(0.5) 
+        time.sleep(0.5)
 
+    elapsed = time.time() - start_time
+    print(f"\nFinished: {len(all_books)} books scraped in {elapsed:.1f}s")
     return all_books
 
 

@@ -17,6 +17,33 @@ This document walks through the HTML structure I observed, the field-level findi
 
 ---
 
+## Data Snapshot
+
+The scraper collected all 1,000 books across 50 pages. These are the actual figures from the current `output.csv`.
+
+| Metric | Value |
+| ------ | ----- |
+| Total records | 1,000 |
+| Price range | £10.00 – £59.99 |
+| Average price | £35.07 |
+| Median price | £36.00 |
+| Most expensive | *The Perfect Play (Play by Play #1)* — £59.99 |
+| Cheapest | *An Abundance of Katherines* — £10.00 |
+
+**Rating distribution:**
+
+| Stars | Count |
+| ----- | ----- |
+| 1★ | 226 |
+| 2★ | 196 |
+| 3★ | 203 |
+| 4★ | 179 |
+| 5★ | 196 |
+
+The 1★ bucket is the largest — more books are rated one star than five on this catalogue.
+
+---
+
 ## HTML Structure Observations
 
 ### Title, Price, and URL
@@ -110,6 +137,7 @@ erDiagram
         int     rating
         int     category_id FK
         bool    is_active
+        datetime first_seen
         datetime last_seen
     }
 
@@ -137,6 +165,7 @@ erDiagram
 | `is_active` flag on `books`                 | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `last_seen`. Hard deletes would break the price history foreign key chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `categories` normalised out                 | Storing category as a raw string on `books` would repeat `"Mystery"` hundreds of times across rows. Instead, `categories` holds each name exactly once and `books` references it via `category_id`. Two concrete benefits: a typo like `"Mysetery"` cannot silently create a phantom category since the FK constraint rejects unknown values, and aggregations like counting books per category work correctly because every book in a category points to the same row, not a loose string. The trade-off is one extra JOIN, which is negligible at this scale. Note: the current scraper does not collect category data, but the product page exposes it and the schema is ready for it. |
 | `scrape_runs` as audit log                  | Every run records timestamp, count, and status. This makes diffs possible since change detection compares run N against run N-1. If a run fails mid-way, `status` reflects it and downstream consumers can skip that run's data entirely.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `first_seen` and `last_seen` on `books`     | `first_seen` records when a book first appeared in the catalogue. `last_seen` records when it was last observed — set on the run where `is_active` flipped to false. Together they give the full lifespan of a catalogue entry without needing to query `price_history`.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### Diagram 2: Data Change Detection
 
@@ -178,6 +207,62 @@ flowchart TD
 | `scrape_runs` log         | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data.        |
 | Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells you exactly when they disappeared. Price history is fully preserved for trend analysis.           |
 | Scheduler                 | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema.             |
+
+### Example Queries
+
+**Current price of a book:**
+
+```sql
+SELECT price
+FROM price_history
+WHERE book_id = 42
+ORDER BY recorded_at DESC
+LIMIT 1;
+```
+
+**All books whose price dropped since the previous run:**
+
+```sql
+SELECT b.title, p_old.price AS price_before, p_new.price AS price_after
+FROM price_history p_old
+JOIN price_history p_new
+  ON p_old.book_id = p_new.book_id
+ AND p_new.run_id = p_old.run_id + 1
+JOIN books b ON b.id = p_old.book_id
+WHERE p_new.price < p_old.price;
+```
+
+**Books that have disappeared from the catalogue:**
+
+```sql
+SELECT title, last_seen
+FROM books
+WHERE is_active = false
+ORDER BY last_seen DESC;
+```
+
+**Price history for a single book over time:**
+
+```sql
+SELECT sr.run_at, ph.price
+FROM price_history ph
+JOIN scrape_runs sr ON sr.id = ph.run_id
+WHERE ph.book_id = 42
+ORDER BY sr.run_at;
+```
+
+---
+
+## Known Limitations
+
+These are the assumptions baked into the current design and how they could fail.
+
+| Assumption | What breaks if it fails |
+| ---------- | ----------------------- |
+| Rating classes are always one of `Zero`–`Five` | A new class like `"Six"` maps silently to `0`. No error is raised; the output just shows a zero rating. A downstream schema constraint on values 0–5 is the safest backstop. |
+| A book's URL slug never changes | If the site re-slugs a title, the scraper treats it as a deletion and a new arrival. Price history is orphaned on the old row. There is no deduplication by title. |
+| The "next" pagination button is present until the last page | The scraper follows buttons dynamically, so new pages beyond 50 are handled correctly , the "50 pages" framing in comments is descriptive, not a hardcoded limit. |
+
 
 ---
 
