@@ -1,45 +1,16 @@
 # My Book Scraper for NexMart
 
-I created a Python web scraper built to extract book data from [books.toscrape.com](http://books.toscrape.com). It collects titles, prices, ratings, and URLs across all 50 pages of the catalogue and exports them to a CSV file.
-
-This document walks through the HTML structure I observed, the field-level findings I hit during development, and the database schema and change detection design for a production-grade version of this system.
-
----
-
-## What Gets Scraped
-
-| Field  | Description |
-| ------ | ----------- |
-| Title  | The full name of the book, e.g. `A Light in the Attic` |
-| URL    | The link to the book's individual page on the site e.g. `https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html` |
-| Price  | The listed price in GBP, e.g. `51.77` |
-| Rating | The star rating on a scale of 1 to 5, e.g. `3` |
-
----
-
-## Data Snapshot
-
-The scraper collected all 1,000 books across 50 pages. These are the actual figures from the current `output.csv`.
-
-| Metric | Value |
-| ------ | ----- |
-| Total records | 1,000 |
-| Price range | £10.00 – £59.99 |
-| Average price | £35.07 |
-
-**Rating distribution:**
-
-| Rating | 1 | 2 | 3 | 4 | 5 |
-| ------ | --- | --- | --- | --- | --- |
-| Count  | 226 | 196 | 203 | 179 | 196 |
-
+I have created a Python web scraper built to extract book data from [books.toscrape.com](http://books.toscrape.com). It collects titles, prices, ratings, and URLs across all the pages of the catalogue and exports them to a CSV file.
 
 
 ---
 
-## HTML Structure Observations
+## Observations
 
-### Title, Price, and URL
+
+### HTML Structure
+
+#### Title, Price, and URL
 
 The title lives inside an anchor (`<a>`) tag. The price is in a class called `product_price > price_color`. The URL comes from the `href` of that same anchor tag.
 
@@ -59,7 +30,7 @@ The pagination "next" button lives inside a `<li class="next">` element. The hre
 
 ---
 
-## Field Observations
+## Fields
 
 These are the non-obvious things I found while building the scraper. Most of them would have caused silent data corruption if I had not caught them.
 
@@ -91,24 +62,12 @@ I mapped the word to an integer using a static dictionary called `RATING_MAP`. B
 
 ### 4. Relative URLs in pagination use `../` in deeper catalogue paths
 
-On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On some other pages I noticed relative URLs with `../` prefixes. To handle this uniformly, I stripped all `../` segments before appending to `BASE_URL`. The cleaner approach would be `urllib.parse.urljoin`, which I considered but skipped to avoid over-engineering a site with a predictable and stable URL structure.
+On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On some other fields I noticed relative URLs with `../` prefixes. To handle this uniformly, I stripped all `../` segments before appending to `BASE_URL`. The cleaner approach would be `urllib.parse.urljoin`, which I considered but skipped to avoid over-engineering a site with a predictable and stable URL structure.
 
 ### 5. I chose `requests` and `BeautifulSoup` over Scrapy intentionally
 
 Scrapy adds a full framework: spiders, pipelines, settings, and middlewares. For a 50-page linear crawl with no JavaScript rendering, that would be roughly four times more code for the same output. I added a `0.5s` delay between requests manually to be polite to the server. The trade-offs are no built-in rate limiting, no distributed crawl support, and no automatic retry queue. For this scope, those are acceptable gaps.
 
-
-### 6. Categories introduced in the system
-
-The site organises every book under a named category.
-<img src="images/categories.png" alt="Book categories shown on the site" />
-
-The current scraper does not capture category data. It walks the full catalogue (`/catalogue/page-N.html`) rather than per-category pages, so no category signal is present in the raw HTML at scrape time. 
-
-I have modified the database design calls for a `CATEGORIES` table with a foreign key on `BOOKS.category_id`, this is a planned gap rather than an oversight. Just wanted to acknowledge it.
-
-
----
 
 ## Database Design
 
@@ -124,17 +83,14 @@ erDiagram
         string  status
     }
 
-    CATEGORIES {
-        int     id          PK
-        string  name        UK
-    }
+  
 
     BOOKS {
         int     id          PK
         string  url         UK
         string  title
         int     rating
-        int     category_id FK
+
         bool    is_active
         datetime first_seen
         datetime last_seen
@@ -148,7 +104,7 @@ erDiagram
         datetime recorded_at
     }
 
-    BOOKS }o--|| CATEGORIES : "belongs to"
+
     BOOKS ||--o{ PRICE_HISTORY : "has"
     PRICE_HISTORY }o--|| SCRAPE_RUNS : "captured in"
 ```
@@ -157,12 +113,10 @@ erDiagram
 
 | Decision                                    | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `books` is the core entity                  | Each row is one catalogue entry identified by a stable `url`, which the site uses as the canonical ID per book. All other tables reference it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `url` as natural unique key on `books`      | The URL encodes a slug that never changes for a given book on this site. More readable than a surrogate key when debugging. Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `books` is the core entity                  | Each row is one catalogue entry identified by a stable `url`, which the site uses as the unique ID per book. All other tables reference it.    Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Price lives in `price_history`, not `books` | Keeps the full historical record intact. Current price is just the latest row for that `book_id`. No data is lost when a price changes. This is the mechanism for change detection shown in Diagram 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `rating` on `books`, not in history         | Rating on this site appears editorial and static. If it ever changed, the change detection flow in Diagram 2 would catch it and we could promote rating to a history table at that point.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `is_active` flag on `books`                 | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `last_seen`. Hard deletes would break the price history foreign key chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `categories` normalised out                 | Storing category as a raw string on `books` would repeat `"Mystery"` hundreds of times across rows. Instead, `categories` holds each name exactly once and `books` references it via `category_id`. Two concrete benefits: a typo like `"Mysetery"` cannot silently create a phantom category since the FK constraint rejects unknown values, and aggregations like counting books per category work correctly because every book in a category points to the same row, not a loose string. The trade-off is one extra JOIN, which is negligible at this scale. Note: the current scraper does not collect category data, but the product page exposes it and the schema is ready for it. |
 | `scrape_runs` as audit log                  | Every run records timestamp, count, and status. This makes diffs possible since change detection compares run N against run N-1. If a run fails mid-way, `status` reflects it and downstream consumers can skip that run's data entirely.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `first_seen` and `last_seen` on `books`     | `first_seen` records when a book first appeared in the catalogue. `last_seen` records when it was last observed — set on the run where `is_active` flipped to false. Together they give the full lifespan of a catalogue entry without needing to query `price_history`.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
@@ -197,9 +151,9 @@ flowchart TD
     H --> I([Done])
 ```
 
-### Component Notes
+### Key Design Decision
 
-| Component                 | Purpose                                                                                                                                                                                    |
+| Decision                 | Reasoning                                                                                                                                                                                    |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `scrape_staging`          | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table.                                                |
 | Diff logic (D to E/F/G)   | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
@@ -252,18 +206,7 @@ ORDER BY sr.run_at;
 
 ---
 
-## Known Limitations
 
-These are the assumptions baked into the current design and how they could fail.
-
-| Assumption | What breaks if it fails |
-| ---------- | ----------------------- |
-| Rating classes are always one of `Zero`–`Five` | A new class like `"Six"` maps silently to `0`. No error is raised; the output just shows a zero rating. A downstream schema constraint on values 0–5 is the safest backstop. |
-| A book's URL slug never changes | If the site re-slugs a title, the scraper treats it as a deletion and a new arrival. Price history is orphaned on the old row. There is no deduplication by title. |
-| The "next" pagination button is present until the last page | The scraper follows buttons dynamically, so new pages beyond 50 are handled correctly , the "50 pages" framing in comments is descriptive, not a hardcoded limit. |
-
-
----
 
 ## Summary
 
@@ -272,7 +215,6 @@ These are the assumptions baked into the current design and how they could fail.
 The normalized schema has 4 tables:
 
 - `books` -- one row per unique book, identified by URL
-- `categories` -- normalised out to avoid string repetition across rows
 - `price_history` -- every price observation, linked to a specific scrape run
 - `scrape_runs` -- audit log of every execution
 
