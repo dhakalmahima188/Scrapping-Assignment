@@ -1,6 +1,8 @@
-# My Book Scraper for NexMart
+# [My Book Scraper for NexMart](https://github.com/dhakalmahima188/Scrapping-Assignment)
 
 I have created a Python web scraper built to extract book data from [books.toscrape.com](http://books.toscrape.com). It collects titles, prices, ratings, and URLs across all the pages of the catalogue and exports them to a CSV file.
+
+
 
 
 ---
@@ -8,6 +10,7 @@ I have created a Python web scraper built to extract book data from [books.toscr
 
 
 ### HTML Structure Observations
+Before writing lines of scraping logic, I mapped out the DOM. Here's what lives where.
 
 #### Title, Price, and URL
 
@@ -220,5 +223,6 @@ Each run writes to a `scrape_staging` table first. A diff then classifies every 
 
 The `scrape_runs` table ties every price snapshot to the exact run that captured it, making the full history traceable and auditable.
 
-### Thank You!
-@Mahima Dhakal
+---
+
+*Thank You! By [@Mahima Dhakal](https://github.com/dhakalmahima188/Scrapping-Assignment)*
