@@ -36,16 +36,7 @@ These are the non-obvious things I found while building the scraper. Most of the
 
 ### 1. The price field has an encoding artifact, not just a currency symbol
 
-The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded.
-
-<img src="images/browser_encoding.png" alt="Browser encoding for this case" />
-
-```python
-response.encoding = 'utf-8'   # gives '£'   (correct)
-response.encoding = 'latin-1'  # gives 'Â£'  (the artifact)
-```
-
-The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
+The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded.The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
 
 ### 2. Book titles are truncated in the `<a>` tag text but the full title is in the `title` attribute
 
@@ -212,7 +203,7 @@ ORDER BY sr.run_at;
 
 ### Schema (ERD)
 
-The normalized schema has 4 tables:
+The normalized schema has 3 tables:
 
 - `books` -- one row per unique book, identified by URL
 - `price_history` -- every price observation, linked to a specific scrape run
