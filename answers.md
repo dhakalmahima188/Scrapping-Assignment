@@ -26,9 +26,6 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 | Total records | 1,000 |
 | Price range | £10.00 – £59.99 |
 | Average price | £35.07 |
-| Median price | £36.00 |
-| Most expensive | *The Perfect Play (Play by Play #1)* — £59.99 |
-| Cheapest | *An Abundance of Katherines* — £10.00 |
 
 **Rating distribution:**
 
@@ -40,7 +37,6 @@ The scraper collected all 1,000 books across 50 pages. These are the actual figu
 | 4★ | 179 |
 | 5★ | 196 |
 
-The 1★ bucket is the largest — more books are rated one star than five on this catalogue.
 
 ---
 
