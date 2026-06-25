@@ -114,6 +114,8 @@ erDiagram
 
 ### Diagram 2: Data Change Detection
 
+Two tables drive the comparison. **`scrape_staging`** is a temporary snapshot holding every URL, price, and rating seen in the current run, wiped and reloaded each time the scraper runs. **`books`** is the permanent catalogue table: one row per unique book, carrying its active status and full history. The diff logic compares these two to decide what changed.
+
 ```mermaid
 flowchart TD
     A([Scheduler\nCron / Airflow / Prefect]) --> B[Run scraper.py\nFetch all 1000 records]
@@ -173,6 +175,26 @@ ON stg_books.url = books.url
 WHERE stg_books.url is NULL
 ```
 
+**Current price of a book**
+
+```sql
+SELECT books.title, price_history.price
+FROM books
+INNER JOIN price_history
+    ON books.id = price_history.book_id
+WHERE price_history.effective_to IS NULL
+  AND books.url = '/scott-pilgrims-precious-little-life-scott-pilgrim-1_987'
+```
+
+**Books that are no more in the catalogue**
+
+```sql
+SELECT title, url, removed_at
+FROM books
+WHERE is_active = false
+ORDER BY removed_at DESC
+```
+
 **Books whose price and rating has changed**
 
 ```sql
@@ -197,30 +219,6 @@ WHERE stg_books.rating <> rating_history.rating
 
 
 
----
 
-
-
-## Summary
-
-### Schema (ERD)
-
-The normalized schema has 3 tables:
-
-- `books` -- one row per unique book, identified by URL
-- `price_history` -- every price observation for a book
-- `rating_history` -- every rating observation for a book
-
-Current price is the latest `price_history` row for a given `book_id` where `effective_to` is NULL. Books that disappear from the site are soft-deleted with `is_active = false`, which preserves all historical pricing and rating data.
-
-### Change Detection
-
-Each run writes to a `scrape_staging` table first. A diff then classifies every record into one of three buckets:
-
-- **New URL** -- insert into `books`, log the first price in `price_history`
-- **Existing URL, price or rating changed** -- insert a new row in the relevant history table
-- **Existing URL, gone from site** -- set `is_active = false`, record `removed_at`
-
----
 
 *Thank You! By [@Mahima Dhakal](https://github.com/dhakalmahima188/Scrapping-Assignment)*
