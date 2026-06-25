@@ -14,6 +14,7 @@ flowchart TD
 
     E --> E1[INSERT into books\nis_active = true\ninserted_at = now]
     E1 --> E2[INSERT into price_history]
+    E1 --> E3[INSERT into rating_history]
 
     F --> F1{Price changed?}
     F1 -->|Yes| F2[INSERT into price_history \n Update the latest row's effective_to = now]
@@ -25,7 +26,7 @@ flowchart TD
 
     G --> G1[UPDATE books\nis_active = false\nremoved_at = now\nupdated_at = now]
 
-    E2 & F2 & F3 & F5 & F6 & G1 --> I([Done])
+    E2 & E3 & F2 & F3 & F5 & F6 & G1 --> I([Done])
 ```
 
 ### Key Design Decision

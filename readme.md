@@ -38,7 +38,7 @@ These are the non-obvious things I found while building the scraper. Most of the
 
 ### 1. The price field has an encoding artifact, not just a currency symbol
 
-The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded.The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
+The raw HTML price sometimes looks like `Â£53.74` depending on how the page is decoded. The pound sign (`£`) is a multi-byte UTF-8 character that renders as `Â£` when decoded with the wrong encoding. Rather than stripping a known leading character like `£`, I stripped everything that is not a digit or decimal point. This handles both the clean and corrupted rendering without hardcoding any specific character, and it stays safe if other unexpected strings come through. We are safe here.
 
 ### 2. Book titles are truncated in the `<a>` tag text but the full title is in the `title` attribute
 
@@ -55,7 +55,7 @@ I mapped the word to an integer using a static dictionary called `RATING_MAP`. B
 
 ### 4. Relative URLs in pagination use `../` in deeper catalogue paths
 
-On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On some other fields I noticed relative URLs with `../` prefixes. To handle this uniformly, I stripped all `../` segments before appending to `BASE_URL`. The cleaner approach would be `urllib.parse.urljoin`, which I considered but skipped to avoid over-engineering a site with a predictable and stable URL structure.
+On page 1, the "next" button href is `page-2.html`, relative to `BASE_URL`. On some other pages and other fields, I noticed relative URLs with `../` prefixes. To handle this uniformly just in case, I stripped all `../` segments before appending to `BASE_URL`. The cleaner approach would be `urllib.parse.urljoin`, which I considered but skipped to avoid over-engineering a site with a predictable and stable URL structure.
 
 ### 5. I chose `requests` and `BeautifulSoup` over Scrapy intentionally
 
@@ -127,6 +127,7 @@ flowchart TD
 
     E --> E1[INSERT into books\nis_active = true\ninserted_at = now]
     E1 --> E2[INSERT into price_history]
+    E1 --> E3[INSERT into rating_history]
 
     F --> F1{Price changed?}
     F1 -->|Yes| F2[INSERT into price_history \n Update the latest row's effective_to = now]
@@ -138,7 +139,7 @@ flowchart TD
 
     G --> G1[UPDATE books\nis_active = false\nremoved_at = now\nupdated_at = now]
 
-    E2 & F2 & F3 & F5 & F6 & G1 --> I([Done])
+    E2 & E3 & F2 & F3 & F5 & F6 & G1 --> I([Done])
 ```
 
 ### Key Design Decision
