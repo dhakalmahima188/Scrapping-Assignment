@@ -69,49 +69,48 @@ Scrapy adds a full framework: spiders, pipelines, settings, and middlewares. For
 
 ```mermaid
 erDiagram
-    SCRAPE_RUNS {
-        int     id          PK
-        datetime run_at
-        int     books_found
-        string  status
-    }
-
-  
-
     BOOKS {
         int     id          PK
         string  url         UK
         string  title
-        int     rating
-
         bool    is_active
-        datetime first_seen
-        datetime last_seen
+        datetime inserted_at
+        datetime updated_at
+        datetime removed_at
     }
 
     PRICE_HISTORY {
         int     id          PK
         int     book_id     FK
-        int     run_id      FK
         decimal price
-        datetime recorded_at
+        datetime effective_from 
+        datetime effective_to
+    }
+    
+    RATING_HISTORY {
+    	int id PK 
+    	int book_id FK 
+    	int rating 
+    	datetime effective_from
+    	datetime effective_to
     }
 
 
     BOOKS ||--o{ PRICE_HISTORY : "has"
-    PRICE_HISTORY }o--|| SCRAPE_RUNS : "captured in"
+    BOOKS ||--o{ RATING_HISTORY : "has"
+   
 ```
 
 ### Key Design Decisions
 
-| Decision                                    | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `books` is the core entity                  | Each row is one catalogue entry identified by a stable `url`, which the site uses as the unique ID per book. All other tables reference it.    Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Price lives in `price_history`, not `books` | Keeps the full historical record intact. Current price is just the latest row for that `book_id`. No data is lost when a price changes. This is the mechanism for change detection shown in Diagram 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `rating` on `books`, not in history         | Rating on this site appears editorial and static. If it ever changed, the change detection flow in Diagram 2 would catch it and we could promote rating to a history table at that point.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `is_active` flag on `books`                 | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `last_seen`. Hard deletes would break the price history foreign key chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `scrape_runs` as audit log                  | Every run records timestamp, count, and status. This makes diffs possible since change detection compares run N against run N-1. If a run fails mid-way, `status` reflects it and downstream consumers can skip that run's data entirely.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `first_seen` and `last_seen` on `books`     | `first_seen` records when a book first appeared in the catalogue. `last_seen` records when it was last observed — set on the run where `is_active` flipped to false. Together they give the full lifespan of a catalogue entry without needing to query `price_history`.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Decision                                              | Reasoning                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------ |
+| `books` is the core entity                            | Each row is one catalogue entry identified by a stable `url`, which the site uses as the unique ID per book. All other tables reference it.    Example: `/scott-pilgrims-precious-little-life-scott-pilgrim-1_987` |
+| Price lives in `price_history`, not `books`           | Keeps the full historical record intact. Current price is row for that `book_id` where effective_to is NULL.  No data is lost when a price changes. This is the mechanism for change detection shown in Diagram 2. |
+| Rating lives in `rating_history`, not books           | Keeps the full historical rating record traceable. Current rating is row for that book_id where effective_to is NULL. No data is lost when a rating changes. |
+| `is_active` flag on `books`                           | Soft-delete approach: when a book disappears from the catalogue we set `is_active = false` and note `updated_at`. Hard deletes would break the price history foreign key chain. |
+| `inserted_at` and `removed_at` on `books`             | `inserted_at` records when a book first appeared in the catalogue. `removed_at` records when it was last observed — set on the run where `is_active` flipped to false. Together they give the full lifespan of a catalogue entry without needing to query the history tables. |
+| `effective_from` and `effective_to` on history tables | This enables to do a point in time historical query for prices and rating by simply querying a table with  `where <desired_date> between effective_from and effective_to` . No more unnecessary rows scan. |
 
 ### Diagram 2: Data Change Detection
 
@@ -126,22 +125,20 @@ flowchart TD
     D --> F[URLs in both\ncheck price + rating]
     D --> G[URLs in books\nnot in staging]
 
-    E --> E1[INSERT into books\nis_active = true\nfirst_seen = now]
-    E1 --> E2[INSERT into price_history\nrun_id = current run]
+    E --> E1[INSERT into books\nis_active = true\ninserted_at = now]
+    E1 --> E2[INSERT into price_history]
 
     F --> F1{Price changed?}
-    F1 -->|Yes| F2[INSERT into price_history\nnew price row]
-    F1 -->|No| F3[No action\nprice unchanged]
+    F1 -->|Yes| F2[INSERT into price_history \n Update the latest row's effective_to = now]
+    F1 -->|No| F3[No action]
 
     F --> F4{Rating changed?}
-    F4 -->|Yes| F5[UPDATE books.rating\nlog change in scrape_runs]
+    F4 -->|Yes| F5[INSERT into rating_history\n Update the latest row's effective_to = now]
     F4 -->|No| F6[No action]
 
-    G --> G1[UPDATE books\nis_active = false\nlast_seen = now]
+    G --> G1[UPDATE books\nis_active = false\nupdated_at = now]
 
-    E2 & F2 & F3 & F5 & F6 & G1 --> H[Update scrape_runs\nstatus = complete\nbooks_found = N]
-
-    H --> I([Done])
+    E2 & F2 & F3 & F5 & F6 & G1 --> I([Done])
 ```
 
 ### Key Design Decision
@@ -150,52 +147,54 @@ flowchart TD
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `scrape_staging`          | Temporary table holding the latest raw scrape. Wiped and reloaded each run. Prevents partial writes from corrupting the live `books` table.                                                |
 | Diff logic (D to E/F/G)   | Three-way comparison: new arrivals, existing books to check for changes, and books that have disappeared. Each branch is independent, so a price change does not affect removal detection. |
-| `scrape_runs` log         | Every run records timestamp, count, and status. This is the audit trail. If a run fails mid-way, the `status` column reflects it and downstream consumers can skip that run's data.        |
 | Soft delete (`is_active`) | Books that vanish from the catalogue are marked inactive, not deleted. `last_seen` tells us exactly when they disappeared. Price history is fully preserved for trend analysis.           |
 | Scheduler                 | Any cron-compatible tool works here. Daily frequency is sufficient for a slow-changing book catalogue. The design supports higher frequency without any changes to the schema.             |
 
 ### Example Queries
 
-**Current price of a book:**
+**New books captured in this current run:**
 
 ```sql
-SELECT price
-FROM price_history
-WHERE book_id = 42
-ORDER BY recorded_at DESC
-LIMIT 1;
+SELECT * 
+FROM stg_books 
+LEFT JOIN books 
+ON stg_books.url = books.url 
+WHERE books.url is NULL
 ```
 
-**All books whose price dropped since the previous run:**
+**Deleted books from the site**
 
 ```sql
-SELECT b.title, p_old.price AS price_before, p_new.price AS price_after
-FROM price_history p_old
-JOIN price_history p_new
-  ON p_old.book_id = p_new.book_id
- AND p_new.run_id = p_old.run_id + 1
-JOIN books b ON b.id = p_old.book_id
-WHERE p_new.price < p_old.price;
+SELECT * 
+FROM books 
+LEFT JOIN stg_books 
+ON stg_books.url = books.url 
+WHERE stg_books.url is NULL
 ```
 
-**Books that have disappeared from the catalogue:**
+**Books whose price and rating has changed**
 
 ```sql
-SELECT title, last_seen
+-- price  changed
+SELECT books.id, stg_books.price
 FROM books
-WHERE is_active = false
-ORDER BY last_seen DESC;
+INNER JOIN price_history
+	ON books.id = price_history.book_id AND price_history.effective_to is NULL
+INNER JOIN stg_books 
+	ON stg_books.url = books.url
+WHERE stg_books.price <> price_history.price
+
+-- rating changed
+SELECT books.id, stg_books.rating 
+FROM books
+INNER JOIN rating_history
+	ON books.id = rating_history.book_id AND rating_history.effective_to is NULL
+INNER JOIN stg_books 
+	ON stg_books.url = books.url
+WHERE stg_books.rating <> rating_history.rating
 ```
 
-**Price history for a single book over time:**
 
-```sql
-SELECT sr.run_at, ph.price
-FROM price_history ph
-JOIN scrape_runs sr ON sr.id = ph.run_id
-WHERE ph.book_id = 42
-ORDER BY sr.run_at;
-```
 
 ---
 
@@ -208,20 +207,18 @@ ORDER BY sr.run_at;
 The normalized schema has 3 tables:
 
 - `books` -- one row per unique book, identified by URL
-- `price_history` -- every price observation, linked to a specific scrape run
-- `scrape_runs` -- audit log of every execution
+- `price_history` -- every price observation for a book
+- `rating_history` -- every rating observation for a book
 
-Current price is the latest `price_history` row for a given `book_id`. Books that disappear from the site are soft-deleted with `is_active = false`, which preserves all historical pricing data.
+Current price is the latest `price_history` row for a given `book_id` where `effective_to` is NULL. Books that disappear from the site are soft-deleted with `is_active = false`, which preserves all historical pricing and rating data.
 
 ### Change Detection
 
 Each run writes to a `scrape_staging` table first. A diff then classifies every record into one of three buckets:
 
 - **New URL** -- insert into `books`, log the first price in `price_history`
-- **Existing URL, price changed** -- insert a new `price_history` row
-- **Existing URL, gone from site** -- set `is_active = false`, record `last_seen`
-
-The `scrape_runs` table ties every price snapshot to the exact run that captured it, making the full history traceable and auditable.
+- **Existing URL, price or rating changed** -- insert a new row in the relevant history table
+- **Existing URL, gone from site** -- set `is_active = false`, record `removed_at`
 
 ---
 
