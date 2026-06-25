@@ -23,7 +23,7 @@ flowchart TD
     F4 -->|Yes| F5[INSERT into rating_history\n Update the latest row's effective_to = now]
     F4 -->|No| F6[No action]
 
-    G --> G1[UPDATE books\nis_active = false\nupdated_at = now]
+    G --> G1[UPDATE books\nis_active = false\nremoved_at = now\nupdated_at = now]
 
     E2 & F2 & F3 & F5 & F6 & G1 --> I([Done])
 ```
